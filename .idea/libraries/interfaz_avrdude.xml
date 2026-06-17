@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="interfaz_avrdude">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/out/artifacts/interfaz_avrdude_jar/interfaz_avrdude.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
