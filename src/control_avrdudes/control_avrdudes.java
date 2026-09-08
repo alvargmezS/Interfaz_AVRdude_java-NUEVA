@@ -1,6 +1,7 @@
 package control_avrdudes;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -197,7 +198,7 @@ public class control_avrdudes {
             }
 
         } catch (IOException e) {
-            if (isAvrdudeNotFound(e)) {
+            if (!isAvrdudeInPath()) {
                 return "ERROR: avrdude no encontrado. Asegúrese de que esté instalado y en el PATH del sistema.\n"
                      + "- macOS: brew install avrdude\n"
                      + "- Linux: sudo apt install avrdude\n"
@@ -215,14 +216,33 @@ public class control_avrdudes {
         return output.toString();
     }
 
-    private boolean isAvrdudeNotFound(IOException e) {
-        String msg = e.getMessage();
-        if (msg == null) return false;
-        String lowerMsg = msg.toLowerCase();
-        return lowerMsg.contains("no such file") || lowerMsg.contains("cannot find")
-                || lowerMsg.contains("not found") || lowerMsg.contains("error=2")
-                || lowerMsg.contains("the system cannot find the file specified")
-                || lowerMsg.contains("no se encontr");
+    private static boolean isAvrdudeInPath() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        List<String> dirs = new ArrayList<>();
+
+        String path = System.getenv("PATH");
+        if (path != null && !path.isEmpty()) {
+            dirs.addAll(Arrays.asList(path.split(File.pathSeparator)));
+        }
+        if (os.contains("win")) {
+            dirs.add("C:\\Program Files\\avrdude");
+            dirs.add("C:\\avrdude");
+        } else if (os.contains("mac")) {
+            dirs.add("/opt/homebrew/bin");
+            dirs.add("/usr/local/bin");
+        } else {
+            dirs.add("/usr/local/bin");
+            dirs.add("/usr/bin");
+        }
+
+        for (String dir : dirs) {
+            if (dir == null || dir.isEmpty()) continue;
+            File candidate = new File(dir, AVRDUDE_CMD);
+            if (candidate.isFile() && candidate.canExecute()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isAvrdudeNotFound(String output) {

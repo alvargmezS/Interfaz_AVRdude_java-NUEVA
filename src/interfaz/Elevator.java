@@ -176,13 +176,15 @@ public final class Elevator {
         if (hasCommand("pkexec")) {
             List<String> fullCmd = new ArrayList<>();
             fullCmd.add("pkexec");
+            fullCmd.add("env");
+            addEnvAssignment(fullCmd, "HOME", System.getProperty("user.home"));
+            addEnvAssignment(fullCmd, "DISPLAY", System.getenv("DISPLAY"));
+            addEnvAssignment(fullCmd, "XAUTHORITY", getXAuthorityPath());
+            addEnvAssignment(fullCmd, "WAYLAND_DISPLAY", System.getenv("WAYLAND_DISPLAY"));
+            addEnvAssignment(fullCmd, "XDG_RUNTIME_DIR", System.getenv("XDG_RUNTIME_DIR"));
             fullCmd.addAll(cmd);
 
             ProcessBuilder pb = new ProcessBuilder(fullCmd);
-            pb.environment().put("HOME", System.getProperty("user.home"));
-            pb.environment().put("DISPLAY", System.getenv().getOrDefault("DISPLAY", ""));
-            pb.environment().put("WAYLAND_DISPLAY", System.getenv().getOrDefault("WAYLAND_DISPLAY", ""));
-            pb.environment().put("XDG_RUNTIME_DIR", System.getenv().getOrDefault("XDG_RUNTIME_DIR", ""));
             pb.inheritIO();
             Process p = pb.start();
             int exitCode = p.waitFor();
@@ -227,12 +229,16 @@ public final class Elevator {
         sudoCmd.add("sudo");
         sudoCmd.add("-S");
         sudoCmd.add("-k");
-        sudoCmd.add("--preserve-env=PATH,HOME,DISPLAY,WAYLAND_DISPLAY,XDG_RUNTIME_DIR");
+        sudoCmd.add("--preserve-env=PATH,HOME,DISPLAY,XAUTHORITY,WAYLAND_DISPLAY,XDG_RUNTIME_DIR");
         sudoCmd.addAll(cmd);
 
         ProcessBuilder pb = new ProcessBuilder(sudoCmd);
         pb.environment().put("HOME", System.getProperty("user.home"));
         pb.environment().put("DISPLAY", System.getenv().getOrDefault("DISPLAY", ""));
+        String xauth = getXAuthorityPath();
+        if (xauth != null) {
+            pb.environment().put("XAUTHORITY", xauth);
+        }
         pb.environment().put("WAYLAND_DISPLAY", System.getenv().getOrDefault("WAYLAND_DISPLAY", ""));
         pb.environment().put("XDG_RUNTIME_DIR", System.getenv().getOrDefault("XDG_RUNTIME_DIR", ""));
         String userPath = System.getenv().getOrDefault("PATH", "");
@@ -309,5 +315,23 @@ public final class Elevator {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private static void addEnvAssignment(List<String> cmd, String name, String value) {
+        if (value != null && !value.isEmpty()) {
+            cmd.add(name + "=" + value);
+        }
+    }
+
+    private static String getXAuthorityPath() {
+        String xauth = System.getenv("XAUTHORITY");
+        if (xauth != null && !xauth.isEmpty() && new File(xauth).canRead()) {
+            return xauth;
+        }
+        File fallback = new File(System.getProperty("user.home"), ".Xauthority");
+        if (fallback.isFile() && fallback.canRead()) {
+            return fallback.getAbsolutePath();
+        }
+        return null;
     }
 }
