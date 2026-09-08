@@ -60,10 +60,10 @@ public final class Elevator {
     private static boolean isWindowsAdmin() {
         try {
             Process p = new ProcessBuilder("net", "session").start();
+            int exitCode = p.waitFor();
             p.getInputStream().close();
             p.getErrorStream().close();
             p.getOutputStream().close();
-            int exitCode = p.waitFor();
             return exitCode == 0;
         } catch (Exception e) {
             return false;
@@ -254,7 +254,24 @@ public final class Elevator {
         os.write((password + "\n").getBytes());
         os.flush();
         os.close();
-        p.getInputStream().close();
+
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(p.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (output.length() < 10000) {
+                    output.append(line).append("\n");
+                }
+            }
+        }
+
+        int exitCode = p.waitFor();
+        if (exitCode != 0) {
+            int tail = Math.max(0, output.length() - 1500);
+            throw new IOException("La elevacion con sudo fallo (codigo de salida " + exitCode + "):\n"
+                    + output.substring(tail));
+        }
 
         return true;
     }
@@ -309,9 +326,10 @@ public final class Elevator {
     private static boolean hasCommand(String command) {
         try {
             Process p = new ProcessBuilder("which", command).start();
+            boolean found = p.waitFor() == 0;
             p.getInputStream().close();
             p.getErrorStream().close();
-            return p.waitFor() == 0;
+            return found;
         } catch (Exception e) {
             return false;
         }
