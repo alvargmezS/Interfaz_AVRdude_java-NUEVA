@@ -189,20 +189,14 @@ public class control_avrdudes {
             int exitCode = finished ? p.exitValue() : -1;
             if (exitCode != 0 && output.length() == 0) {
                 if (isAvrdudeNotFound(output.toString())) {
-                    return "ERROR: avrdude no encontrado. Asegúrese de que esté instalado y en el PATH del sistema.\n"
-                         + "- macOS: brew install avrdude\n"
-                         + "- Linux: sudo apt install avrdude\n"
-                         + "- Windows: Descargue desde https://avrdudes.github.io/avrdude/";
+                    return avrdudeNotFoundMessage();
                 }
                 output.append("avrdude finalizó con código de salida: ").append(exitCode);
             }
 
         } catch (IOException e) {
             if (!isAvrdudeInPath()) {
-                return "ERROR: avrdude no encontrado. Asegúrese de que esté instalado y en el PATH del sistema.\n"
-                     + "- macOS: brew install avrdude\n"
-                     + "- Linux: sudo apt install avrdude\n"
-                     + "- Windows: Descargue desde https://avrdudes.github.io/avrdude/";
+                return avrdudeNotFoundMessage();
             }
             return "Error de ejecución: " + e.getMessage();
         } catch (InterruptedException e) {
@@ -238,6 +232,39 @@ public class control_avrdudes {
         for (String dir : dirs) {
             if (dir == null || dir.isEmpty()) continue;
             File candidate = new File(dir, AVRDUDE_CMD);
+            if (candidate.isFile() && candidate.canExecute()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String avrdudeNotFoundMessage() {
+        return "ERROR: avrdude no encontrado. Asegúrese de que esté instalado y en el PATH del sistema.\n"
+             + "- macOS: brew install avrdude\n"
+             + "- Linux: " + linuxInstallHint() + "\n"
+             + "- Windows: Descargue desde https://avrdudes.github.io/avrdude/";
+    }
+
+    private static String linuxInstallHint() {
+        if (isExecutableOnPath("dnf")) return "sudo dnf install avrdude";
+        if (isExecutableOnPath("yum")) return "sudo yum install avrdude";
+        if (isExecutableOnPath("apt")) return "sudo apt install avrdude";
+        if (isExecutableOnPath("apt-get")) return "sudo apt-get install avrdude";
+        if (isExecutableOnPath("pacman")) return "sudo pacman -S avrdude";
+        if (isExecutableOnPath("zypper")) return "sudo zypper install avrdude";
+        if (isExecutableOnPath("apk")) return "sudo apk add avrdude";
+        return "instale avrdude con el gestor de paquetes de su distribución";
+    }
+
+    private static boolean isExecutableOnPath(String name) {
+        String path = System.getenv("PATH");
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        for (String dir : path.split(File.pathSeparator)) {
+            if (dir == null || dir.isEmpty()) continue;
+            File candidate = new File(dir, name);
             if (candidate.isFile() && candidate.canExecute()) {
                 return true;
             }
