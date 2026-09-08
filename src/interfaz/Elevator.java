@@ -117,10 +117,12 @@ public final class Elevator {
         os.flush();
         os.close();
 
+        StringBuilder output = new StringBuilder();
         InputStreamReader isr = new InputStreamReader(p.getInputStream());
         try (BufferedReader reader = new BufferedReader(isr)) {
             String line;
             while ((line = reader.readLine()) != null) {
+                output.append(line).append("\n");
                 if (line.toLowerCase().contains("incorrect password") ||
                     line.toLowerCase().contains("sorry") ||
                     line.toLowerCase().contains("authentication failure")) {
@@ -128,6 +130,14 @@ public final class Elevator {
                     throw new IOException("Contrasena incorrecta.");
                 }
             }
+        }
+
+        // El EOF indica que la instancia elevada ya terminó: si falló, mostrar el error
+        int exitCode = p.waitFor();
+        if (exitCode != 0) {
+            int tail = Math.max(0, output.length() - 1500);
+            throw new IOException("La instancia elevada fallio (codigo de salida " + exitCode + "):\n"
+                    + output.substring(tail));
         }
 
         return true;

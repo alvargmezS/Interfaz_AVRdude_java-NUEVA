@@ -22,12 +22,12 @@ public class control_avrdudes {
         return "avrdude";
     }
 
-    public String cargar(String hex, String gHex, String mc, String pg, String[] fuses, String action) {
+    public String cargar(String hex, String gHex, String mc, String pg, String[] fuses, String bitclock, String action) {
         if (action.equals("Read fuses")) {
-            return readFuses(pg, mc);
+            return readFuses(pg, mc, bitclock);
         }
 
-        List<String> cmd = buildCommand(hex, gHex, mc, pg, fuses, action);
+        List<String> cmd = buildCommand(hex, gHex, mc, pg, fuses, bitclock, action);
         if (cmd == null) {
             return "Acción no reconocida: " + action;
         }
@@ -49,23 +49,24 @@ public class control_avrdudes {
         }
     }
 
-    private List<String> buildCommand(String hex, String gHex, String mc, String pg, String[] fuses, String action) {
+    private List<String> buildCommand(String hex, String gHex, String mc, String pg, String[] fuses, String bitclock, String action) {
         switch (action) {
             case "Write .hex":
-                return commandList("-c", pg, "-P", "usb", "-p", mc, "-U", "flash:w:" + hex + ":i");
+                return withBitclock(commandList("-c", pg, "-P", "usb", "-p", mc, "-U", "flash:w:" + hex + ":i"), bitclock);
             case "Read .hex":
-                return commandList("-c", pg, "-P", "usb", "-p", mc, "-U", "flash:r:" + gHex + ":i");
+                return withBitclock(commandList("-c", pg, "-P", "usb", "-p", mc, "-U", "flash:r:" + gHex + ":i"), bitclock);
             case "Verificar .hex":
-                return commandList("-c", pg, "-P", "usb", "-p", mc, "-U", "flash:v:" + hex + ":i");
+                return withBitclock(commandList("-c", pg, "-P", "usb", "-p", mc, "-U", "flash:v:" + hex + ":i"), bitclock);
             case "Write fuses": {
                 String[] cf = convertFuses(fuses);
-                return commandList("-c", pg, "-P", "usb", "-p", mc,
+                return withBitclock(commandList("-c", pg, "-P", "usb", "-p", mc,
                         "-U", "lfuse:w:" + cf[0] + ":m",
                         "-U", "hfuse:w:" + cf[1] + ":m",
-                        "-U", "efuse:w:" + cf[2] + ":m");
+                        "-U", "efuse:w:" + cf[2] + ":m"), bitclock);
             }
             case "Prueba conexión":
-                return commandList("-p", mc, "-c", pg);
+                // Leer la firma es la verificación real de la cadena USB-ISP-microcontrolador
+                return withBitclock(commandList("-c", pg, "-P", "usb", "-p", mc, "-U", "signature:r:-:h"), bitclock);
             case "Lista mc":
                 return commandList("-p", "?");
             case "Lista programadores":
@@ -75,6 +76,15 @@ public class control_avrdudes {
         }
     }
 
+    // -B fija el bitclock y evita que avrdude envíe el ajuste automático de SCK al programador
+    private List<String> withBitclock(List<String> cmd, String bitclock) {
+        if (bitclock != null && !bitclock.isEmpty()) {
+            cmd.add("-B");
+            cmd.add(bitclock);
+        }
+        return cmd;
+    }
+
     private List<String> commandList(String... args) {
         List<String> cmd = new ArrayList<>();
         cmd.add(AVRDUDE_CMD);
@@ -82,14 +92,14 @@ public class control_avrdudes {
         return cmd;
     }
 
-    private String readFuses(String pg, String mc) {
+    private String readFuses(String pg, String mc, String bitclock) {
         StringBuilder result = new StringBuilder("Leyendo fuses:\n");
         String[] labels = {"Low fuse", "High fuse", "Extended fuse"};
         String[] fuseArgs = {"lfuse", "hfuse", "efuse"};
 
         for (int i = 0; i < 3; i++) {
-            List<String> cmd = commandList("-c", pg, "-P", "usb", "-p", mc,
-                    "-U", fuseArgs[i] + ":r:-:h");
+            List<String> cmd = withBitclock(commandList("-c", pg, "-P", "usb", "-p", mc,
+                    "-U", fuseArgs[i] + ":r:-:h"), bitclock);
             result.append(labels[i]).append(": ");
             result.append(executeCommand(cmd));
             result.append("\n");

@@ -15,7 +15,8 @@ Interfaz gráfica multiplataforma para **AVRdude** escrita en Java. Permite flas
 - **Verificar .hex** — Verificación de flash contra archivo hexadecimal
 - **Read/Write fuses** — Lectura y escritura de fuses (low, high, extended) con soporte para valores hexadecimales y binarios
 - **Lista de microcontroladores y programadores** — Listado formateado en tabla con IDs y descripciones
-- **Prueba de conexión** — Verificación rápida del programador conectado
+- **Prueba de conexión** — Verificación real de la cadena USB→ISP→micro: lee la firma del chip y muestra un veredicto explícito de éxito o error
+- **Velocidad SCK fija (bitclock `-B`)** — Fija la velocidad del reloj ISP para que ni avrdude ni el firmware del programador la ajusten automáticamente por software. Por defecto 187.5 kHz (seguro para objetivos a ≥ 750 kHz, incluidos chips vírgenes a 1 MHz); seleccionable entre 3 MHz y 8 kHz, o Auto (comportamiento de avrdude)
 - **Consola con colores** — Salida coloreada por tipo: errores (rojo), warnings (amarillo), fuses (cian), éxito (verde), progreso (gris)
 - **Elevación de privilegios automática** — `sudo` en macOS/Linux, `UAC` en Windows
 - **Interfaz moderna** — FlatLaf con fallback al Look & Feel del sistema

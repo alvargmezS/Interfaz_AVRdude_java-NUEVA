@@ -46,10 +46,27 @@ public class panel extends JPanel {
 
     private static final boolean IS_MAC = System.getProperty("os.name", "").toLowerCase().contains("mac");
 
+    // {bitclock en µs para -B, etiqueta}. "" = dejar que avrdude ajuste el SCK por software
+    private static final String[][] SCK_OPTIONS = {
+            {"0.3",  "3 MHz"},
+            {"0.6",  "1.5 MHz"},
+            {"1.3",  "750 kHz"},
+            {"2.6",  "375 kHz"},
+            {"5.2",  "187.5 kHz"},
+            {"10.5", "93.75 kHz"},
+            {"31",   "32 kHz"},
+            {"62",   "16 kHz"},
+            {"124",  "8 kHz"},
+            {"",     "Auto (avrdude)"},
+    };
+    private static final String DEFAULT_SCK = "187.5 kHz";
+
     private String hex = "";
     private String gHex = "";
     private String mc = "m16";
     private String pg = "usbasp";
+    private String sck = "5.2";
+    private String sckLabel = DEFAULT_SCK;
     private String lfuse = "0x";
     private String hfuse = "0x";
     private String efuse = "0x";
@@ -66,9 +83,11 @@ public class panel extends JPanel {
     private JComboBox<String> selectE;
     private JComboBox<String> comboMc;
     private JComboBox<String> comboPg;
+    private JComboBox<String> comboSck;
     private JLabel lblHex;
     private JLabel lblMc;
     private JLabel lblPg;
+    private JLabel lblSck;
     private JLabel lblLfuse;
     private JLabel lblHfuse;
     private JLabel lblEfuse;
@@ -138,9 +157,28 @@ public class panel extends JPanel {
         lblHex = new JLabel("Ningún archivo");
         lblMc = new JLabel(mc);
         lblPg = new JLabel(pg);
+        lblSck = new JLabel(sckLabel);
         lblLfuse = new JLabel("lfuse: " + lfuse);
         lblHfuse = new JLabel("hfuse: " + hfuse);
         lblEfuse = new JLabel("efuse: " + efuse);
+
+        comboSck = new JComboBox<>();
+        for (String[] opt : SCK_OPTIONS) {
+            comboSck.addItem(opt[1]);
+        }
+        comboSck.setToolTipText("<html>Velocidad SCK del ISP (opci\u00f3n -B de avrdude).<br>"
+                + "Fijarla evita que avrdude y el firmware del programador la ajusten por software.<br>"
+                + "Debe ser menor o igual a 1/4 del reloj del microcontrolador objetivo.</html>");
+        comboSck.setPreferredSize(new Dimension(110, 30));
+        comboSck.addActionListener(e -> {
+            int idx = comboSck.getSelectedIndex();
+            if (idx >= 0 && idx < SCK_OPTIONS.length) {
+                sck = SCK_OPTIONS[idx][0];
+                sckLabel = SCK_OPTIONS[idx][1];
+                lblSck.setText(sckLabel);
+            }
+        });
+        comboSck.setSelectedItem(DEFAULT_SCK);
 
         createMenuBar();
     }
@@ -310,7 +348,7 @@ public class panel extends JPanel {
         appendToConsole("[" + time + "] ", styleTimestamp);
     }
 
-    private void appendHeader(String command, String mcVal, String pgVal, String hexVal) {
+    private void appendHeader(String command, String mcVal, String pgVal, String hexVal, String sckVal) {
         String line = "\u2550".repeat(55) + "\n";
         appendToConsole(line, styleHeader);
 
@@ -320,6 +358,8 @@ public class panel extends JPanel {
         if (!pgVal.isEmpty()) header.append("  |  PG: ").append(pgVal);
         if (!hexVal.isEmpty() && !command.contains("Lista") && !command.contains("Prueba"))
             header.append("  |  File: ").append(hexVal);
+        if (!sckVal.isEmpty() && !command.contains("Lista"))
+            header.append("  |  SCK: ").append(sckVal);
         header.append("\n");
 
         appendToConsole(header.toString(), styleBold);
@@ -337,6 +377,11 @@ public class panel extends JPanel {
             }
 
             String lower = trimmed.toLowerCase();
+
+            if (lower.contains("cannot set sck period")) {
+                appendToConsole(trimmed + "\n", styleWarning);
+                continue;
+            }
 
             if (lower.contains("error") || lower.contains("cannot find")
                     || lower.contains("not found") || lower.contains("failed")
@@ -363,6 +408,47 @@ public class panel extends JPanel {
             }
 
             appendToConsole(line + "\n", styleNormal);
+        }
+    }
+
+    private boolean isCommandFailure(String result) {
+        String r = result.toLowerCase();
+        return r.contains("initialization failed")
+                || r.contains("does not answer")
+                || r.contains("cannot find usb device")
+                || r.contains("invalid device signature")
+                || r.contains("no such file")
+                || r.contains("avrdude no encontrado")
+                || r.contains("excedió el tiempo")
+                || r.contains("finalizó con código de salida");
+    }
+
+    private void appendConnectionVerdict(String result) {
+        String firma = null;
+        for (String line : result.split("\n")) {
+            String t = line.trim();
+            if (t.matches("(?i)0x[0-9a-f]{1,2}(,0x[0-9a-f]{1,2}){2}")) {
+                try {
+                    String[] parts = t.split(",");
+                    firma = String.format("%02X %02X %02X",
+                            Integer.decode(parts[0].trim()),
+                            Integer.decode(parts[1].trim()),
+                            Integer.decode(parts[2].trim()));
+                } catch (NumberFormatException ignored) {
+                }
+                break;
+            }
+        }
+
+        appendToConsole("\n", styleNormal);
+        if (firma != null) {
+            appendToConsole("\u2713 Conexión correcta — firma del microcontrolador: " + firma + "\n", styleSuccess);
+        } else if (result.toLowerCase().contains("avrdude no encontrado")) {
+            appendToConsole("\u2717 avrdude no encontrado. Instale AVRDUDE y compruebe el PATH.\n", styleError);
+        } else if (result.toLowerCase().contains("cannot find usb device")) {
+            appendToConsole("\u2717 Programador no detectado por USB. Compruebe el cable y la conexión.\n", styleError);
+        } else {
+            appendToConsole("\u2717 El microcontrolador no responde. Compruebe alimentación y cableado ISP, o pruebe una velocidad SCK menor.\n", styleError);
         }
     }
 
@@ -454,28 +540,46 @@ public class panel extends JPanel {
         return menuBar;
     }
 
-    private JToolBar createToolBar() {
-        JToolBar toolBar = new JToolBar();
-        toolBar.setFloatable(false);
-        toolBar.setBackground(TOOLBAR_BG);
-        toolBar.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER),
-                BorderFactory.createEmptyBorder(4, 6, 4, 6)));
+    private JComponent createToolBar() {
+        JPanel container = new JPanel(new GridLayout(0, 1, 0, 0));
+        container.setBackground(TOOLBAR_BG);
+        container.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER));
+
+        JToolBar actions = newToolBarRow(4, 2);
+
+        JButton btnWrite = makeFlatButton("\u25BC Programar", "Write .hex", SUCCESS_BTN, SUCCESS_HOVER);
+        btnWrite.setToolTipText("<html>Escribir el archivo .hex en la flash del microcontrolador<br>(" + (IS_MAC ? "Cmd" : "Ctrl") + "+W)</html>");
+        btnWrite.addActionListener(new CargarAction());
+        actions.add(btnWrite);
+
+        JButton btnRead = makeFlatButton("\u25B2 Leer Hex", "Read .hex", ACCENT, ACCENT_HOVER);
+        btnRead.setToolTipText("<html>Leer la flash del microcontrolador y guardarla en un archivo .hex<br>(" + (IS_MAC ? "Cmd" : "Ctrl") + "+R)</html>");
+        btnRead.addActionListener(new CargarAction());
+        actions.add(btnRead);
+
+        JButton btnVerify = makeFlatButton("\u2713 Verificar", "Verificar .hex", LABEL_SEC, LABEL_PRI);
+        btnVerify.setToolTipText("Comparar el archivo .hex con la flash del microcontrolador");
+        btnVerify.addActionListener(new CargarAction());
+        actions.add(btnVerify);
+
+        actions.addSeparator(new Dimension(14, 28));
 
         JButton btnOpen = makeFlatButton("\u2191 Abrir", "abrir_hex", ACCENT, ACCENT_HOVER);
         btnOpen.setToolTipText("Seleccionar archivo .hex");
         btnOpen.addActionListener(new ArchivoAction());
-        toolBar.add(btnOpen);
+        actions.add(btnOpen);
 
         JButton btnSave = makeFlatButton("\u2193 Guardar", "guardar_hex", ACCENT, ACCENT_HOVER);
         btnSave.setToolTipText("Guardar archivo .hex");
         btnSave.addActionListener(new GuardarAction());
-        toolBar.add(btnSave);
+        actions.add(btnSave);
+
+        actions.addSeparator(new Dimension(14, 28));
 
         JButton btnConnect = makeFlatButton("\u26A1 Conexión", "Prueba conexión", SUCCESS_BTN, SUCCESS_HOVER);
         btnConnect.setToolTipText("Probar conexión con programador");
         btnConnect.addActionListener(new CargarAction());
-        toolBar.add(btnConnect);
+        actions.add(btnConnect);
 
         JButton btnClear = makeFlatButton("\u232B Borrar", "borrar", DANGER, DANGER_HOVER);
         btnClear.setToolTipText("Limpiar consola");
@@ -484,33 +588,49 @@ public class panel extends JPanel {
             setStatusReady();
             appendToConsole("Consola limpiada.\n", styleProgress);
         });
-        toolBar.add(btnClear);
+        actions.add(btnClear);
 
-        toolBar.addSeparator();
+        JToolBar config = newToolBarRow(2, 4);
 
-        toolBar.add(makeSectionLabel("MC:"));
-        toolBar.add(comboMc);
+        config.add(makeSectionLabel("MC:"));
+        config.add(comboMc);
 
         btnListaMc = makeFlatButton("\u21BB", "Lista mc", LABEL_SEC, LABEL_PRI);
         btnListaMc.setToolTipText("Listar microcontroladores disponibles");
         btnListaMc.setFont(btnListaMc.getFont().deriveFont(Font.PLAIN, 13f));
         btnListaMc.setMargin(new Insets(2, 6, 2, 6));
         btnListaMc.addActionListener(new CargarAction());
-        toolBar.add(btnListaMc);
+        config.add(btnListaMc);
 
-        toolBar.addSeparator();
+        config.addSeparator(new Dimension(14, 28));
 
-        toolBar.add(makeSectionLabel("PG:"));
-        toolBar.add(comboPg);
+        config.add(makeSectionLabel("PG:"));
+        config.add(comboPg);
 
         btnListaPg = makeFlatButton("\u21BB", "Lista programadores", LABEL_SEC, LABEL_PRI);
         btnListaPg.setToolTipText("Listar programadores disponibles");
         btnListaPg.setFont(btnListaPg.getFont().deriveFont(Font.PLAIN, 13f));
         btnListaPg.setMargin(new Insets(2, 6, 2, 6));
         btnListaPg.addActionListener(new CargarAction());
-        toolBar.add(btnListaPg);
+        config.add(btnListaPg);
 
-        return toolBar;
+        config.addSeparator(new Dimension(14, 28));
+
+        config.add(makeSectionLabel("SCK:"));
+        config.add(comboSck);
+
+        container.add(actions);
+        container.add(config);
+        return container;
+    }
+
+    private JToolBar newToolBarRow(int topPad, int bottomPad) {
+        JToolBar tb = new JToolBar();
+        tb.setFloatable(false);
+        tb.setBackground(TOOLBAR_BG);
+        tb.setLayout(new FlowLayout(FlowLayout.CENTER, 4, 0));
+        tb.setBorder(BorderFactory.createEmptyBorder(topPad, 6, bottomPad, 6));
+        return tb;
     }
 
     private JButton makeFlatButton(String text, String actionCommand, Color bg, Color hoverBg) {
@@ -641,6 +761,8 @@ public class panel extends JPanel {
         lblMc.setForeground(new Color(33, 33, 33));
         lblPg.setFont(valueFont);
         lblPg.setForeground(new Color(33, 33, 33));
+        lblSck.setFont(valueFont);
+        lblSck.setForeground(new Color(33, 33, 33));
 
         JPanel center = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 0));
         center.setOpaque(false);
@@ -649,6 +771,8 @@ public class panel extends JPanel {
         center.add(makeStatusChip("MC", lblMc, new Color(106, 27, 154)));
         center.add(makeVSeparator());
         center.add(makeStatusChip("PG", lblPg, new Color(0, 121, 107)));
+        center.add(makeVSeparator());
+        center.add(makeStatusChip("SCK", lblSck, new Color(194, 24, 91)));
 
         statusBar.add(center, BorderLayout.CENTER);
         return statusBar;
@@ -712,19 +836,43 @@ public class panel extends JPanel {
         lblPg.setText(pg);
     }
 
-    private class ArchivoAction implements ActionListener {
-        private final JFileChooser fc = new JFileChooser();
+    private boolean askOpenHex() {
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Seleccionar archivo .hex a programar");
+        fc.setFileFilter(new FileNameExtensionFilter("Archivos HEX (*.hex)", "hex"));
+        int option = fc.showOpenDialog(this);
+        if (option == JFileChooser.APPROVE_OPTION) {
+            File archivo = fc.getSelectedFile();
+            hex = archivo.getAbsolutePath();
+            lblHex.setText(archivo.getName());
+            return true;
+        }
+        return false;
+    }
 
+    private boolean askSaveHex() {
+        JFileChooser fc = new JFileChooser();
+        fc.setDialogTitle("Guardar flash leída como...");
+        fc.setFileFilter(new FileNameExtensionFilter("Archivos HEX (*.hex)", "hex"));
+        int option = fc.showSaveDialog(this);
+        if (option == JFileChooser.APPROVE_OPTION) {
+            File archivo = fc.getSelectedFile();
+            String path = archivo.getAbsolutePath();
+            if (!path.toLowerCase().endsWith(".hex")) {
+                path += ".hex";
+                archivo = new File(path);
+            }
+            gHex = path;
+            lblHex.setText(archivo.getName());
+            return true;
+        }
+        return false;
+    }
+
+    private class ArchivoAction implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
-            fc.setDialogTitle("Seleccionar archivo .hex");
-            fc.setFileFilter(new FileNameExtensionFilter("Archivos HEX (*.hex)", "hex"));
-            int option = fc.showOpenDialog(panel.this);
-            if (option == JFileChooser.APPROVE_OPTION) {
-                File archivo = fc.getSelectedFile();
-                hex = archivo.getAbsolutePath();
-                lblHex.setText(archivo.getName());
-            } else if (option == JFileChooser.CANCEL_OPTION) {
+            if (!askOpenHex()) {
                 hex = "";
                 lblHex.setText("Ningún archivo");
             }
@@ -732,23 +880,9 @@ public class panel extends JPanel {
     }
 
     private class GuardarAction implements ActionListener {
-        private final JFileChooser fc = new JFileChooser();
-
         @Override
         public void actionPerformed(ActionEvent e) {
-            fc.setDialogTitle("Guardar archivo .hex");
-            fc.setFileFilter(new FileNameExtensionFilter("Archivos HEX (*.hex)", "hex"));
-            int option = fc.showSaveDialog(panel.this);
-            if (option == JFileChooser.APPROVE_OPTION) {
-                File archivo = fc.getSelectedFile();
-                String path = archivo.getAbsolutePath();
-                if (!path.toLowerCase().endsWith(".hex")) {
-                    path += ".hex";
-                    archivo = new File(path);
-                }
-                gHex = path;
-                lblHex.setText(archivo.getName());
-            } else if (option == JFileChooser.CANCEL_OPTION) {
+            if (!askSaveHex()) {
                 gHex = "";
             }
         }
@@ -765,6 +899,21 @@ public class panel extends JPanel {
             String finalAction = actionCommand;
             String[] fuses = {lfuse, hfuse, efuse};
 
+            if ((finalAction.equals("Write .hex") || finalAction.equals("Verificar .hex")) && hex.isEmpty()) {
+                if (!askOpenHex()) {
+                    appendTimestamp();
+                    appendToConsole("Operación cancelada: no se seleccionó el archivo .hex de origen.\n", styleWarning);
+                    return;
+                }
+            }
+            if (finalAction.equals("Read .hex") && gHex.isEmpty()) {
+                if (!askSaveHex()) {
+                    appendTimestamp();
+                    appendToConsole("Operación cancelada: no se indicó el archivo .hex de destino.\n", styleWarning);
+                    return;
+                }
+            }
+
             boolean isListaMc = finalAction.equals("Lista mc");
             boolean isListaPg = finalAction.equals("Lista programadores");
 
@@ -779,7 +928,7 @@ public class panel extends JPanel {
 
             clearConsole();
             appendTimestamp();
-            appendHeader(finalAction, mc, pg, hex);
+            appendHeader(finalAction, mc, pg, finalAction.equals("Read .hex") ? gHex : hex, sckLabel);
 
             setStatusRunning(finalAction);
 
@@ -787,7 +936,7 @@ public class panel extends JPanel {
                 @Override
                 protected String doInBackground() {
                     control_avrdudes c = new control_avrdudes();
-                    return c.cargar(hex, gHex, mc, pg, fuses, finalAction);
+                    return c.cargar(hex, gHex, mc, pg, fuses, sck, finalAction);
                 }
 
                 @Override
@@ -803,9 +952,20 @@ public class panel extends JPanel {
                             appendToConsole("\n", styleNormal);
                         } else {
                             appendStyledOutput(result);
+                            if (result.toLowerCase().contains("cannot set sck period")) {
+                                appendToConsole("Nota: el firmware de este programador no acepta el ajuste de SCK por software "
+                                        + "(usa velocidad automática interna); la velocidad SCK seleccionada no tendrá efecto en él.\n", styleInfo);
+                            }
+                            if (finalAction.equals("Prueba conexión")) {
+                                appendConnectionVerdict(result);
+                            }
                         }
 
-                        setStatusSuccess(finalAction);
+                        if (isCommandFailure(result)) {
+                            setStatusError(finalAction);
+                        } else {
+                            setStatusSuccess(finalAction);
+                        }
 
                         if (isListaMc) {
                             java.util.List<String> mcIds = control_avrdudes.parseAvrdudeList(result, "mc");
@@ -822,7 +982,7 @@ public class panel extends JPanel {
                     } catch (InterruptedException | ExecutionException ex) {
                         clearConsole();
                         appendTimestamp();
-                        appendHeader("Error", mc, pg, "");
+                        appendHeader("Error", mc, pg, "", sckLabel);
                         appendToConsole(ex.getMessage() + "\n", styleError);
                         setStatusError(finalAction);
                         btnListaMc.setEnabled(true);

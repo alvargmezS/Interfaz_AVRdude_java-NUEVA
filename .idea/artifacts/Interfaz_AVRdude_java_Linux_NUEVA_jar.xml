@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="Interfaz_AVRdude_java-Linux-NUEVA:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/Interfaz_AVRdude_java_Linux_NUEVA_jar</output-path>
+    <root id="archive" name="Interfaz_AVRdude_java-Linux-NUEVA.jar">
+      <element id="module-output" name="Interfaz_AVRdude_java-Linux-NUEVA" />
+    </root>
+  </artifact>
+</component>
